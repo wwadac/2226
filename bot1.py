@@ -8,7 +8,7 @@ from aiogram.contrib.fsm_storage.memory import MemoryStorage
 from moviepy.editor import *
 from PIL import Image
 
-API_TOKEN = "8324933170:AAFatQ1T42ZJ70oeWS2UJkcXFeiwUFCIXAk"
+API_TOKEN = "8259782982:AAF_cCRncLPaM2X5KViHg7PF3Vu8lqk1kCA"
 
 logging.basicConfig(level=logging.INFO)
 bot = Bot(token=API_TOKEN)
