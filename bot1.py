@@ -1,283 +1,311 @@
 import logging
+import asyncio
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, CallbackQueryHandler
+from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
+from telethon import TelegramClient
+from telethon.sessions import StringSession
+import sqlite3
+import os
 
 # Настройка логирования
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO
 )
+logger = logging.getLogger(__name__)
 
-# Будем хранить текущий шрифт для каждого пользователя
-user_fonts = {}
+# Конфигурация
+BOT_TOKEN = "8259782982:AAF_cCRncLPaM2X5KViHg7PF3Vu8lqk1kCA"
+API_ID = "29385016"  # Получить на my.telegram.org
+API_HASH = "3c57df8805ab5de5a23a032ed39b9af9"  # Получить на my.telegram.org
 
-# Список шрифтов (пока заполню несколько, остальные добавишь потом)
-FONTS = {
-    'font1': {
-        'name': '🔤 Обычный',
-        'map': {'a': '𝗮', 'b': '𝗯', 'c': '𝗰', 'd': '𝗱', 'e': '𝗲', 'f': '𝗳', 'g': '𝗴', 'h': '𝗵',
-    'i': '𝗶', 'j': '𝗷', 'k': '𝗸', 'l': '𝗹', 'm': '𝗺', 'n': '𝗻', 'o': '𝗼', 'p': '𝗽',
-    'q': '𝗾', 'r': '𝗿', 's': '𝘀', 't': '𝘁', 'u': '𝘂', 'v': '𝘃', 'w': '𝘄', 'x': '𝘅',
-    'y': '𝘆', 'z': '𝘇', 'A': '𝗔', 'B': '𝗕', 'C': '𝗖', 'D': '𝗗', 'E': '𝗘', 'F': '𝗙',
-    'G': '𝗚', 'H': '𝗛', 'I': '𝗜', 'J': '𝗝', 'K': '𝗞', 'L': '𝗟', 'M': '𝗠', 'N': '𝗡',
-    'O': '𝗢', 'P': '𝗣', 'Q': '𝗤', 'R': '𝗥', 'S': '𝗦', 'T': '𝗧', 'U': '𝗨', 'V': '𝗩',
-    'W': '𝗪', 'X': '𝗫', 'Y': '𝗬', 'Z': '𝗭'}
-    },
-    'font2': {
-        'name': '🅒🅘🅡🅒🅛🅔🅓',
-        'map': {
-            'a': '🅐', 'b': '🅑', 'c': '🅒', 'd': '🅓', 'e': '🅔', 'f': '🅕', 'g': '🅖', 'h': '🅗',
-            'i': '🅘', 'j': '🅙', 'k': '🅚', 'l': '🅛', 'm': '🅜', 'n': '🅝', 'o': '🅞', 'p': '🅟',
-            'q': '🅠', 'r': '🅡', 's': '🅢', 't': '🅣', 'u': '🅤', 'v': '🅥', 'w': '🅦', 'x': '🅧',
-            'y': '🅨', 'z': '🅩', 'A': '🅐', 'B': '🅑', 'C': '🅒', 'D': '🅓', 'E': '🅔', 'F': '🅕',
-            'G': '🅖', 'H': '🅗', 'I': '🅘', 'J': '🅙', 'K': '🅚', 'L': '🅛', 'M': '🅜', 'N': '🅝',
-            'O': '🅞', 'P': '🅟', 'Q': '🅠', 'R': '🅡', 'S': '🅢', 'T': '🅣', 'U': '🅤', 'V': '🅥',
-            'W': '🅦', 'X': '🅧', 'Y': '🅨', 'Z': '🅩'
-        }
-    },
-    'font3': {
-        'name': '𝐁𝐨𝐥𝐝',
-        'map': {
-            'a': '𝐚', 'b': '𝐛', 'c': '𝐜', 'd': '𝐝', 'e': '𝐞', 'f': '𝐟', 'g': '𝐠', 'h': '𝐡',
-            'i': '𝐢', 'j': '𝐣', 'k': '𝐤', 'l': '𝐥', 'm': '𝐦', 'n': '𝐧', 'o': '𝐨', 'p': '𝐩',
-            'q': '𝐪', 'r': '𝐫', 's': '𝐬', 't': '𝐭', 'u': '𝐮', 'v': '𝐯', 'w': '𝐰', 'x': '𝐱',
-            'y': '𝐲', 'z': '𝐳', 'A': '𝐀', 'B': '𝐁', 'C': '𝐂', 'D': '𝐃', 'E': '𝐄', 'F': '𝐅',
-            'G': '𝐆', 'H': '𝐇', 'I': '𝐈', 'J': '𝐉', 'K': '𝐊', 'L': '𝐋', 'M': '𝐌', 'N': '𝐍',
-            'O': '𝐎', 'P': '𝐏', 'Q': '𝐐', 'R': '𝐑', 'S': '𝐒', 'T': '𝐓', 'U': '𝐔', 'V': '𝐕',
-            'W': '𝐖', 'X': '𝐗', 'Y': '𝐘', 'Z': '𝐙'
-        }
-    },
-    'font4': {
-        'name': '𝕄𝕒𝕥𝕙𝕖𝕞𝕒𝕥𝕚𝕔𝕒𝕝',
-        'map': {
-            'a': '𝕒', 'b': '𝕓', 'c': '𝕔', 'd': '𝕕', 'e': '𝕖', 'f': '𝕗', 'g': '𝕘', 'h': '𝕙',
-            'i': '𝕚', 'j': '𝕛', 'k': '𝕜', 'l': '𝕝', 'm': '𝕞', 'n': '𝕟', 'o': '𝕠', 'p': '𝕡',
-            'q': '𝕢', 'r': '𝕣', 's': '𝕤', 't': '𝕥', 'u': '𝕦', 'v': '𝕧', 'w': '𝕨', 'x': '𝕩',
-            'y': '𝕪', 'z': '𝕫', 'A': '𝔸', 'B': '𝔹', 'C': 'ℂ', 'D': '𝔻', 'E': '𝔼', 'F': '𝔽',
-            'G': '𝔾', 'H': 'ℍ', 'I': '𝕀', 'J': '𝕁', 'K': '𝕂', 'L': '𝕃', 'M': '𝕄', 'N': 'ℕ',
-            'O': '𝕆', 'P': 'ℙ', 'Q': 'ℚ', 'R': 'ℝ', 'S': '𝕊', 'T': '𝕋', 'U': '𝕌', 'V': '𝕍',
-            'W': '𝕎', 'X': '𝕏', 'Y': '𝕐', 'Z': 'ℤ'
-        }
-    },
-    'font5': {
-        'name': '𝒮𝒸𝓇𝒾𝓅𝓉',
-        'map': {
-            'a': '𝒶', 'b': '𝒷', 'c': '𝒸', 'd': '𝒹', 'e': '𝑒', 'f': '𝒻', 'g': '𝑔', 'h': '𝒽',
-            'i': '𝒾', 'j': '𝒿', 'k': '𝓀', 'l': '𝓁', 'm': '𝓂', 'n': '𝓃', 'o': '𝑜', 'p': '𝓅',
-            'q': '𝓆', 'r': '𝓇', 's': '𝓈', 't': '𝓉', 'u': '𝓊', 'v': '𝓋', 'w': '𝓌', 'x': '𝓍',
-            'y': '𝓎', 'z': '𝓏', 'A': '𝒜', 'B': '𝐵', 'C': '𝒞', 'D': '𝒟', 'E': '𝐸', 'F': '𝐹',
-            'G': '𝒢', 'H': '𝐻', 'I': '𝐼', 'J': '𝒥', 'K': '𝒦', 'L': '𝐿', 'M': '𝑀', 'N': '𝒩',
-            'O': '𝒪', 'P': '𝒫', 'Q': '𝒬', 'R': '𝑅', 'S': '𝒮', 'T': '𝒯', 'U': '𝒰', 'V': '𝒱',
-            'W': '𝒲', 'X': '𝒳', 'Y': '𝒴', 'Z': '𝒵'
-        }
-    },
-    'font6': {
-        'name': '𝔉𝔯𝔞𝔨𝔱𝔲𝔯',
-        'map': {
-            'a': '𝔞', 'b': '𝔟', 'c': '𝔠', 'd': '𝔡', 'e': '𝔢', 'f': '𝔣', 'g': '𝔤', 'h': '𝔥',
-            'i': '𝔦', 'j': '𝔧', 'k': '𝔨', 'l': '𝔩', 'm': '𝔪', 'n': '𝔫', 'o': '𝔬', 'p': '𝔭',
-            'q': '𝔮', 'r': '𝔯', 's': '𝔰', 't': '𝔱', 'u': '𝔲', 'v': '𝔳', 'w': '𝔴', 'x': '𝔵',
-            'y': '𝔶', 'z': '𝔷', 'A': '𝔄', 'B': '𝔅', 'C': 'ℭ', 'D': '𝔇', 'E': '𝔈', 'F': '𝔉',
-            'G': '𝔊', 'H': 'ℌ', 'I': 'ℑ', 'J': '𝔍', 'K': '𝔎', 'L': '𝔏', 'M': '𝔐', 'N': '𝔑',
-            'O': '𝔒', 'P': '𝔓', 'Q': '𝔔', 'R': 'ℜ', 'S': '𝔖', 'T': '𝔗', 'U': '𝔘', 'V': '𝔙',
-            'W': '𝔚', 'X': '𝔛', 'Y': '𝔜', 'Z': 'ℨ'
-        }
-    },
-    'font7': {
-        'name': 'Ⓜⓞⓝⓞⓒⓘⓡⓒⓛⓔ',
-        'map': {
-            'a': 'ⓐ', 'b': 'ⓑ', 'c': 'ⓒ', 'd': 'ⓓ', 'e': 'ⓔ', 'f': 'ⓕ', 'g': 'ⓖ', 'h': 'ⓗ',
-            'i': 'ⓘ', 'j': 'ⓙ', 'k': 'ⓚ', 'l': 'ⓛ', 'm': 'ⓜ', 'n': 'ⓝ', 'o': 'ⓞ', 'p': 'ⓟ',
-            'q': 'ⓠ', 'r': 'ⓡ', 's': 'ⓢ', 't': 'ⓣ', 'u': 'ⓤ', 'v': 'ⓥ', 'w': 'ⓦ', 'x': 'ⓧ',
-            'y': 'ⓨ', 'z': 'ⓩ', 'A': 'Ⓐ', 'B': 'Ⓑ', 'C': 'Ⓒ', 'D': 'Ⓓ', 'E': 'Ⓔ', 'F': 'Ⓕ',
-            'G': 'Ⓖ', 'H': 'Ⓗ', 'I': 'Ⓘ', 'J': 'Ⓙ', 'K': 'Ⓚ', 'L': 'Ⓛ', 'M': 'Ⓜ', 'N': 'Ⓝ',
-            'O': 'Ⓞ', 'P': 'Ⓟ', 'Q': 'Ⓠ', 'R': 'Ⓡ', 'S': 'Ⓢ', 'T': 'Ⓣ', 'U': 'Ⓤ', 'V': 'Ⓥ',
-            'W': 'Ⓦ', 'X': 'Ⓧ', 'Y': 'Ⓨ', 'Z': 'Ⓩ'
-        }
-    },
-    'font8': {
-        'name': '🄱🄾🅇🄴🄳',
-        'map': {
-            'a': '🄰', 'b': '🄱', 'c': '🄲', 'd': '🄳', 'e': '🄴', 'f': '🄵', 'g': '🄶', 'h': '🄷',
-            'i': '🄸', 'j': '🄹', 'k': '🄺', 'l': '🄻', 'm': '🄼', 'n': '🄽', 'o': '🄾', 'p': '🄿',
-            'q': '🅀', 'r': '🅁', 's': '🅂', 't': '🅃', 'u': '🅄', 'v': '🅅', 'w': '🅆', 'x': '🅇',
-            'y': '🅈', 'z': '🅉', 'A': '🄰', 'B': '🄱', 'C': '🄲', 'D': '🄳', 'E': '🄴', 'F': '🄵',
-            'G': '🄶', 'H': '🄷', 'I': '🄸', 'J': '🄹', 'K': '🄺', 'L': '🄻', 'M': '🄼', 'N': '🄽',
-            'O': '🄾', 'P': '🄿', 'Q': '🅀', 'R': '🅁', 'S': '🅂', 'T': '🅃', 'U': '🅄', 'V': '🅅',
-            'W': '🅆', 'X': '🅇', 'Y': '🅈', 'Z': '🅉'
-        }
-    },
-    'font9': {
-        'name': '𝓒𝓾𝓻𝓼𝓲𝓿𝓮',
-        'map': {
-            'a': '𝓪', 'b': '𝓫', 'c': '𝓬', 'd': '𝓭', 'e': '𝓮', 'f': '𝓯', 'g': '𝓰', 'h': '𝓱',
-            'i': '𝓲', 'j': '𝓳', 'k': '𝓴', 'l': '𝓵', 'm': '𝓶', 'n': '𝓷', 'o': '𝓸', 'p': '𝓹',
-            'q': '𝓺', 'r': '𝓻', 's': '𝓼', 't': '𝓽', 'u': '𝓾', 'v': '𝓿', 'w': '𝔀', 'x': '𝔁',
-            'y': '𝔂', 'z': '𝔃', 'A': '𝓐', 'B': '𝓑', 'C': '𝓒', 'D': '𝓓', 'E': '𝓔', 'F': '𝓕',
-            'G': '𝓖', 'H': '𝓗', 'I': '𝓘', 'J': '𝓙', 'K': '𝓚', 'L': '𝓛', 'M': '𝓜', 'N': '𝓝',
-            'O': '𝓞', 'P': '𝓟', 'Q': '𝓠', 'R': '𝓡', 'S': '𝓢', 'T': '𝓣', 'U': '𝓤', 'V': '𝓥',
-            'W': '𝓦', 'X': '𝓧', 'Y': '𝓨', 'Z': '𝓩'
-        }
-    },
-    'font10': {
-        'name': 'Твой стиль',  # Заполнишь потом
-        'map': {}
-    }
-}
+# Инициализация базы данных
+def init_db():
+    conn = sqlite3.connect('sessions.db')
+    cursor = conn.cursor()
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS authorized_users (
+            user_id INTEGER PRIMARY KEY,
+            username TEXT,
+            authorized_by INTEGER,
+            status TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS telegram_sessions (
+            session_name TEXT PRIMARY KEY,
+            string_session TEXT,
+            phone_number TEXT,
+            is_active BOOLEAN DEFAULT FALSE
+        )
+    ''')
+    conn.commit()
+    conn.close()
 
-def convert_font(text, font_map):
-    """Преобразует текст в указанный шрифт"""
-    if not font_map:  # Если шрифт пустой, возвращаем оригинальный текст
-        return text
-    
-    result = []
-    for char in text:
-        if char in font_map:
-            result.append(font_map[char])
-        else:
-            result.append(char)
-    return ''.join(result)
+init_db()
 
-def get_font_keyboard(user_id, page=0):
-    """Создает клавиатуру с шрифтами для страницы"""
-    fonts_per_page = 5
-    font_keys = list(FONTS.keys())
-    total_pages = (len(font_keys) + fonts_per_page - 1) // fonts_per_page
-    
-    # Получаем шрифты для текущей страницы
-    start_idx = page * fonts_per_page
-    end_idx = start_idx + fonts_per_page
-    page_fonts = font_keys[start_idx:end_idx]
-    
-    keyboard = []
-    
-    # Кнопки шрифтов
-    for font_key in page_fonts:
-        font_data = FONTS[font_key]
-        is_selected = user_fonts.get(user_id) == font_key
-        emoji = "✅" if is_selected else "🔤"
-        keyboard.append([InlineKeyboardButton(
-            f"{emoji} {font_data['name']}", 
-            callback_data=f"select_{font_key}_{page}"
-        )])
-    
-    # Кнопки навигации
-    nav_buttons = []
-    if page > 0:
-        nav_buttons.append(InlineKeyboardButton("⬅️ Назад", callback_data=f"page_{page-1}"))
-    
-    nav_buttons.append(InlineKeyboardButton(f"{page+1}/{total_pages}", callback_data="ignore"))
-    
-    if page < total_pages - 1:
-        nav_buttons.append(InlineKeyboardButton("Вперёд ➡️", callback_data=f"page_{page+1}"))
-    
-    if nav_buttons:
-        keyboard.append(nav_buttons)
-    
-    return InlineKeyboardMarkup(keyboard)
+# Словари для временного хранения
+pending_authorizations = {}
+active_clients = {}
 
+# Команда /start
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Обработчик команды /start"""
-    user_id = update.effective_user.id
-    user_fonts[user_id] = 'font1'  # Устанавливаем шрифт по умолчанию
-    
-    welcome_text = """
-🎨 Бот для изменения шрифта текста
-
-Отправьте мне текст, и я преобразую его в выбранный шрифт!
-
-Используйте кнопки ниже для выбора шрифта:
-"""
+    user = update.effective_user
     await update.message.reply_text(
-        welcome_text,
-        reply_markup=get_font_keyboard(user_id)
+        f"Привет, {user.first_name}!\n"
+        "Я бот для управления Telegram аккаунтами через сессии.\n\n"
+        "Доступные команды:\n"
+        "/add_session - Добавить сессию Telethon\n"
+        "/request_auth - Запросить авторизацию пользователя\n"
+        "/list_sessions - Список активных сессий\n"
+        "/send_message - Отправить сообщение через сессию\n"
+        "/change_name - Изменить имя через сессию\n"
+        "/logout_session - Выйти из сессии"
     )
 
-async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Обработчик команды /help"""
-    help_text = """
-📝 Как использовать бота:
-
-1. Выберите шрифт с помощью кнопок
-2. Отправьте любой текст
-3. Получите текст в выбранном стиле!
-4. Меняйте шрифты сколько угодно раз
-
-Поддерживаются английские буквы, цифры и основные символы.
-"""
-    await update.message.reply_text(help_text)
-
-async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Обработчик текстовых сообщений"""
-    user_id = update.effective_user.id
-    user_text = update.message.text
-    
-    # Пропускаем команды
-    if user_text.startswith('/'):
+# Добавление Telethon сессии
+async def add_session(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not context.args:
+        await update.message.reply_text(
+            "Использование: /add_session <session_name> <phone_number>\n\n"
+            "После ввода команды бот запросит код авторизации."
+        )
         return
     
-    # Получаем текущий шрифт пользователя
-    current_font = user_fonts.get(user_id, 'font1')
-    font_data = FONTS[current_font]
+    if len(context.args) < 2:
+        await update.message.reply_text("Нужно указать название сессии и номер телефона")
+        return
     
-    # Конвертируем текст
-    converted_text = convert_font(user_text, font_data['map'])
+    session_name = context.args[0]
+    phone_number = context.args[1]
     
-    response = f"""
-🎯 Текст в стиле: {font_data['name']}
-
-{converted_text}
-
-💡 Чтобы изменить шрифт, используйте /start
-"""
-    await update.message.reply_text(response)
-
-async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Обработчик нажатий на кнопки"""
-    query = update.callback_query
-    await query.answer()
+    # Сохраняем информацию для следующего шага
+    context.user_data['awaiting_code'] = True
+    context.user_data['session_name'] = session_name
+    context.user_data['phone_number'] = phone_number
     
-    user_id = query.from_user.id
-    data = query.data
+    # Создаем клиент Telethon
+    client = TelegramClient(
+        StringSession(), 
+        API_ID, 
+        API_HASH
+    )
     
-    if data.startswith('select_'):
-        # Выбор шрифта
-        _, font_key, page = data.split('_')
-        user_fonts[user_id] = font_key
+    try:
+        await client.connect()
         
-        # Обновляем сообщение
-        await query.edit_message_text(
-            text=f"✅ Выбран шрифт: {FONTS[font_key]['name']}\n\nТеперь отправьте текст для преобразования!",
-            reply_markup=get_font_keyboard(user_id, int(page))
+        # Отправляем код
+        sent_code = await client.send_code_request(phone_number)
+        context.user_data['phone_code_hash'] = sent_code.phone_code_hash
+        context.user_data['client'] = client
+        
+        await update.message.reply_text(
+            f"Код отправлен на номер {phone_number}. "
+            f"Введите код в формате: /code <код>"
         )
-    
-    elif data.startswith('page_'):
-        # Смена страницы
-        page = int(data.split('_')[1])
-        await query.edit_message_reply_markup(
-            reply_markup=get_font_keyboard(user_id, page)
-        )
-    
-    elif data == 'ignore':
-        # Игнорируем нажатие на номер страницы
-        pass
+        
+    except Exception as e:
+        await update.message.reply_text(f"Ошибка: {str(e)}")
 
-def main():
-    """Основная функция"""
-    TOKEN = '8259782982:AAF_cCRncLPaM2X5KViHg7PF3Vu8lqk1kCA'
+# Обработка кода авторизации
+async def handle_code(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not context.user_data.get('awaiting_code'):
+        await update.message.reply_text("Сначала используйте /add_session")
+        return
     
-    # Создаем приложение
-    application = Application.builder().token(TOKEN).build()
+    if not context.args:
+        await update.message.reply_text("Использование: /code <код_из_смс>")
+        return
+    
+    code = context.args[0]
+    client = context.user_data.get('client')
+    session_name = context.user_data.get('session_name')
+    phone_number = context.user_data.get('phone_number')
+    phone_code_hash = context.user_data.get('phone_code_hash')
+    
+    try:
+        # Авторизуем клиента
+        await client.sign_in(
+            phone=phone_number,
+            code=code,
+            phone_code_hash=phone_code_hash
+        )
+        
+        # Сохраняем строку сессии в базу
+        string_session = client.session.save()
+        
+        conn = sqlite3.connect('sessions.db')
+        cursor = conn.cursor()
+        cursor.execute('''
+            INSERT OR REPLACE INTO telegram_sessions 
+            (session_name, string_session, phone_number, is_active) 
+            VALUES (?, ?, ?, ?)
+        ''', (session_name, string_session, phone_number, True))
+        conn.commit()
+        conn.close()
+        
+        # Сохраняем активного клиента
+        active_clients[session_name] = client
+        
+        # Очищаем временные данные
+        context.user_data.clear()
+        
+        await update.message.reply_text(
+            f"✅ Сессия '{session_name}' успешно авторизована!\n"
+            f"Теперь вы можете использовать эту сессию для отправки сообщений."
+        )
+        
+    except Exception as e:
+        await update.message.reply_text(f"Ошибка авторизации: {str(e)}")
+
+# Отправка сообщения через сессию
+async def send_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if len(context.args) < 3:
+        await update.message.reply_text(
+            "Использование: /send_message <session_name> <username/phone> <message>\n\n"
+            "Пример: /send_message my_session @username Привет!"
+        )
+        return
+    
+    session_name = context.args[0]
+    target = context.args[1]
+    message = ' '.join(context.args[2:])
+    
+    if session_name not in active_clients:
+        await update.message.reply_text(f"Сессия '{session_name}' не найдена. Сначала добавьте сессию.")
+        return
+    
+    client = active_clients[session_name]
+    
+    try:
+        # Отправляем сообщение
+        await client.send_message(target, message)
+        await update.message.reply_text(f"✅ Сообщение отправлено через сессию '{session_name}'")
+        
+    except Exception as e:
+        await update.message.reply_text(f"Ошибка отправки: {str(e)}")
+
+# Изменение имени через сессию
+async def change_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if len(context.args) < 3:
+        await update.message.reply_text(
+            "Использование: /change_name <session_name> <first_name> <last_name>\n\n"
+            "Пример: /change_name my_session Иван Иванов"
+        )
+        return
+    
+    session_name = context.args[0]
+    first_name = context.args[1]
+    last_name = ' '.join(context.args[2:])
+    
+    if session_name not in active_clients:
+        await update.message.reply_text(f"Сессия '{session_name}' не найдена.")
+        return
+    
+    client = active_clients[session_name]
+    
+    try:
+        # Меняем имя профиля
+        await client(functions.account.UpdateProfileRequest(
+            first_name=first_name,
+            last_name=last_name
+        ))
+        
+        await update.message.reply_text(
+            f"✅ Имя профиля изменено через сессию '{session_name}'\n"
+            f"Новое имя: {first_name} {last_name}"
+        )
+        
+    except Exception as e:
+        await update.message.reply_text(f"Ошибка изменения имени: {str(e)}")
+
+# Список активных сессий
+async def list_sessions(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    conn = sqlite3.connect('sessions.db')
+    cursor = conn.cursor()
+    cursor.execute('SELECT session_name, phone_number, is_active FROM telegram_sessions')
+    sessions = cursor.fetchall()
+    conn.close()
+    
+    if not sessions:
+        await update.message.reply_text("Нет активных сессий.")
+        return
+    
+    sessions_text = "📱 Активные сессии:\n\n"
+    for session in sessions:
+        status = "✅ Активна" if session[2] else "❌ Неактивна"
+        sessions_text += f"Имя: {session[0]}\nТелефон: {session[1]}\nСтатус: {status}\n\n"
+    
+    await update.message.reply_text(sessions_text)
+
+# Выход из сессии
+async def logout_session(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not context.args:
+        await update.message.reply_text("Использование: /logout_session <session_name>")
+        return
+    
+    session_name = context.args[0]
+    
+    if session_name in active_clients:
+        client = active_clients[session_name]
+        await client.log_out()
+        del active_clients[session_name]
+    
+    # Обновляем базу данных
+    conn = sqlite3.connect('sessions.db')
+    cursor = conn.cursor()
+    cursor.execute('DELETE FROM telegram_sessions WHERE session_name = ?', (session_name,))
+    conn.commit()
+    conn.close()
+    
+    await update.message.reply_text(f"✅ Сессия '{session_name}' завершена.")
+
+# Загрузка сессий при старте
+async def load_sessions():
+    conn = sqlite3.connect('sessions.db')
+    cursor = conn.cursor()
+    cursor.execute('SELECT session_name, string_session FROM telegram_sessions WHERE is_active = 1')
+    sessions = cursor.fetchall()
+    conn.close()
+    
+    for session_name, string_session in sessions:
+        try:
+            client = TelegramClient(
+                StringSession(string_session), 
+                API_ID, 
+                API_HASH
+            )
+            await client.connect()
+            
+            if await client.is_user_authorized():
+                active_clients[session_name] = client
+                logger.info(f"Сессия '{session_name}' загружена")
+            else:
+                logger.warning(f"Сессия '{session_name}' не авторизована")
+                
+        except Exception as e:
+            logger.error(f"Ошибка загрузки сессии '{session_name}': {e}")
+
+# Основная функция
+def main():
+    # Создаем приложение бота
+    application = Application.builder().token(BOT_TOKEN).build()
     
     # Добавляем обработчики
     application.add_handler(CommandHandler("start", start))
-    application.add_handler(CommandHandler("help", help_command))
-    application.add_handler(CallbackQueryHandler(button_handler))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
+    application.add_handler(CommandHandler("add_session", add_session))
+    application.add_handler(CommandHandler("code", handle_code))
+    application.add_handler(CommandHandler("send_message", send_message))
+    application.add_handler(CommandHandler("change_name", change_name))
+    application.add_handler(CommandHandler("list_sessions", list_sessions))
+    application.add_handler(CommandHandler("logout_session", logout_session))
     
     # Запускаем бота
     print("Бот запущен...")
     application.run_polling()
 
 if __name__ == '__main__':
+    # Загружаем сессии при старте
+    asyncio.run(load_sessions())
     main()
