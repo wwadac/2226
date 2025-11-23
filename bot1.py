@@ -12,9 +12,9 @@ from telegram.ext import Application, CommandHandler, MessageHandler, filters, C
 
 # ===== НАСТРОЙКИ =====
 API_ID = 29385016  # твой API ID
-API_HASH = "89db2f46dca86b9e7c6f81f2b9f9b3a5"  # твой API HASH
+API_HASH = "3c57df8805ab5de5a23a032ed39b9af9"  # твой API HASH
 PHONE_NUMBER = "+79044586895"  # твой номер телефона
-BOT_TOKEN = "789012345:ABCdefGHIjklMNOpqrsTUVwxyz"  # токен бота от @BotFather
+BOT_TOKEN = "8259782982:AAF_cCRncLPaM2X5KViHg7PF3Vu8lqk1kCA"  # токен бота от @BotFather
 
 # Настройка логирования
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
