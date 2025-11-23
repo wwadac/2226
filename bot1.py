@@ -1,10 +1,10 @@
 import logging
 import asyncio
+import sqlite3
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
-from telethon import TelegramClient
+from telethon import TelegramClient, functions
 from telethon.sessions import StringSession
-import sqlite3
 import os
 
 # Настройка логирования
@@ -24,15 +24,6 @@ def init_db():
     conn = sqlite3.connect('sessions.db')
     cursor = conn.cursor()
     cursor.execute('''
-        CREATE TABLE IF NOT EXISTS authorized_users (
-            user_id INTEGER PRIMARY KEY,
-            username TEXT,
-            authorized_by INTEGER,
-            status TEXT,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-    ''')
-    cursor.execute('''
         CREATE TABLE IF NOT EXISTS telegram_sessions (
             session_name TEXT PRIMARY KEY,
             string_session TEXT,
@@ -45,8 +36,7 @@ def init_db():
 
 init_db()
 
-# Словари для временного хранения
-pending_authorizations = {}
+# Глобальные переменные
 active_clients = {}
 
 # Команда /start
@@ -57,10 +47,9 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "Я бот для управления Telegram аккаунтами через сессии.\n\n"
         "Доступные команды:\n"
         "/add_session - Добавить сессию Telethon\n"
-        "/request_auth - Запросить авторизацию пользователя\n"
-        "/list_sessions - Список активных сессий\n"
         "/send_message - Отправить сообщение через сессию\n"
         "/change_name - Изменить имя через сессию\n"
+        "/list_sessions - Список активных сессий\n"
         "/logout_session - Выйти из сессии"
     )
 
@@ -69,6 +58,7 @@ async def add_session(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
         await update.message.reply_text(
             "Использование: /add_session <session_name> <phone_number>\n\n"
+            "Пример: /add_session my_session +79123456789\n\n"
             "После ввода команды бот запросит код авторизации."
         )
         return
@@ -85,14 +75,14 @@ async def add_session(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data['session_name'] = session_name
     context.user_data['phone_number'] = phone_number
     
-    # Создаем клиент Telethon
-    client = TelegramClient(
-        StringSession(), 
-        API_ID, 
-        API_HASH
-    )
-    
     try:
+        # Создаем клиент Telethon
+        client = TelegramClient(
+            StringSession(), 
+            int(API_ID), 
+            API_HASH
+        )
+        
         await client.connect()
         
         # Отправляем код
@@ -101,12 +91,12 @@ async def add_session(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data['client'] = client
         
         await update.message.reply_text(
-            f"Код отправлен на номер {phone_number}. "
+            f"📱 Код отправлен на номер {phone_number}.\n"
             f"Введите код в формате: /code <код>"
         )
         
     except Exception as e:
-        await update.message.reply_text(f"Ошибка: {str(e)}")
+        await update.message.reply_text(f"❌ Ошибка: {str(e)}")
 
 # Обработка кода авторизации
 async def handle_code(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -118,7 +108,7 @@ async def handle_code(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Использование: /code <код_из_смс>")
         return
     
-    code = context.args[0]
+    code = context.args[0].strip()
     client = context.user_data.get('client')
     session_name = context.user_data.get('session_name')
     phone_number = context.user_data.get('phone_number')
@@ -157,14 +147,14 @@ async def handle_code(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         
     except Exception as e:
-        await update.message.reply_text(f"Ошибка авторизации: {str(e)}")
+        await update.message.reply_text(f"❌ Ошибка авторизации: {str(e)}")
 
 # Отправка сообщения через сессию
 async def send_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if len(context.args) < 3:
         await update.message.reply_text(
             "Использование: /send_message <session_name> <username/phone> <message>\n\n"
-            "Пример: /send_message my_session @username Привет!"
+            "Пример: /send_message my_session @username Привет как дела?"
         )
         return
     
@@ -173,7 +163,7 @@ async def send_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     message = ' '.join(context.args[2:])
     
     if session_name not in active_clients:
-        await update.message.reply_text(f"Сессия '{session_name}' не найдена. Сначала добавьте сессию.")
+        await update.message.reply_text(f"❌ Сессия '{session_name}' не найдена. Сначала добавьте сессию через /add_session")
         return
     
     client = active_clients[session_name]
@@ -184,7 +174,7 @@ async def send_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"✅ Сообщение отправлено через сессию '{session_name}'")
         
     except Exception as e:
-        await update.message.reply_text(f"Ошибка отправки: {str(e)}")
+        await update.message.reply_text(f"❌ Ошибка отправки: {str(e)}")
 
 # Изменение имени через сессию
 async def change_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -200,7 +190,7 @@ async def change_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
     last_name = ' '.join(context.args[2:])
     
     if session_name not in active_clients:
-        await update.message.reply_text(f"Сессия '{session_name}' не найдена.")
+        await update.message.reply_text(f"❌ Сессия '{session_name}' не найдена.")
         return
     
     client = active_clients[session_name]
@@ -218,7 +208,7 @@ async def change_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         
     except Exception as e:
-        await update.message.reply_text(f"Ошибка изменения имени: {str(e)}")
+        await update.message.reply_text(f"❌ Ошибка изменения имени: {str(e)}")
 
 # Список активных сессий
 async def list_sessions(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -229,13 +219,14 @@ async def list_sessions(update: Update, context: ContextTypes.DEFAULT_TYPE):
     conn.close()
     
     if not sessions:
-        await update.message.reply_text("Нет активных сессий.")
+        await update.message.reply_text("📭 Нет активных сессий.")
         return
     
     sessions_text = "📱 Активные сессии:\n\n"
     for session in sessions:
         status = "✅ Активна" if session[2] else "❌ Неактивна"
-        sessions_text += f"Имя: {session[0]}\nТелефон: {session[1]}\nСтатус: {status}\n\n"
+        is_loaded = "🟢 В памяти" if session[0] in active_clients else "⚪ Не в памяти"
+        sessions_text += f"Имя: {session[0]}\nТелефон: {session[1]}\nСтатус: {status}\n{is_loaded}\n\n"
     
     await update.message.reply_text(sessions_text)
 
@@ -250,6 +241,7 @@ async def logout_session(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if session_name in active_clients:
         client = active_clients[session_name]
         await client.log_out()
+        await client.disconnect()
         del active_clients[session_name]
     
     # Обновляем базу данных
@@ -273,22 +265,25 @@ async def load_sessions():
         try:
             client = TelegramClient(
                 StringSession(string_session), 
-                API_ID, 
+                int(API_ID), 
                 API_HASH
             )
             await client.connect()
             
             if await client.is_user_authorized():
                 active_clients[session_name] = client
-                logger.info(f"Сессия '{session_name}' загружена")
+                logger.info(f"✅ Сессия '{session_name}' загружена")
             else:
-                logger.warning(f"Сессия '{session_name}' не авторизована")
+                logger.warning(f"❌ Сессия '{session_name}' не авторизована")
                 
         except Exception as e:
-            logger.error(f"Ошибка загрузки сессии '{session_name}': {e}")
+            logger.error(f"⚠️ Ошибка загрузки сессии '{session_name}': {e}")
 
-# Основная функция
-def main():
+# Основная асинхронная функция
+async def main():
+    # Загружаем сессии при старте
+    await load_sessions()
+    
     # Создаем приложение бота
     application = Application.builder().token(BOT_TOKEN).build()
     
@@ -302,10 +297,9 @@ def main():
     application.add_handler(CommandHandler("logout_session", logout_session))
     
     # Запускаем бота
-    print("Бот запущен...")
-    application.run_polling()
+    print("🤖 Бот запущен...")
+    await application.run_polling()
 
 if __name__ == '__main__':
-    # Загружаем сессии при старте
-    asyncio.run(load_sessions())
-    main()
+    # Запускаем асинхронную основную функцию
+    asyncio.run(main())
