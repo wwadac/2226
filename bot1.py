@@ -2366,9 +2366,9 @@ def get_rass(id):
 
 @bot.message_handler(commands=['start'])
 def welcome(message):
-    my_channel_id = 
-    name_chanell = ''
-    set_channel = ''
+    my_channel_id = -1003123170962
+    name_chanell = 'l'
+    set_channel = 'https://t.me/erseffa'
     statuss = ['creator', 'administrator', 'member']
     for i in statuss:
         #Тут если кент уже в канале пишешь что должно быть при старте
