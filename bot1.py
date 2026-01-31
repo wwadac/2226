@@ -1,6 +1,7 @@
 import telebot
 import cv2
 import os
+import numpy as np
 
 TOKEN = '7795610786:AAHhkUL7WcOLYVO18FDyceG3ZTDtWGpphZo'
 bot = telebot.TeleBot(TOKEN)
@@ -11,25 +12,37 @@ def handle_photo(message):
         file_info = bot.get_file(message.photo[-1].file_id)
         downloaded = bot.download_file(file_info.file_path)
 
-        with open('qr.jpg', 'wb') as f:
-            f.write(downloaded)
+        img_array = np.frombuffer(downloaded, dtype=np.uint8)
+        img = cv2.imdecode(img_array, cv2.IMREAD_COLOR)
 
-        img = cv2.imread('qr.jpg')
+        if img is None:
+            bot.send_message(message.chat.id, "❌ Не удалось прочитать изображение.")
+            return
+
         detector = cv2.QRCodeDetector()
         link, _, _ = detector.detectAndDecode(img)
 
-        os.remove('qr.jpg')
-
-        if link:
-            bot.send_message(message.chat.id, f'Ссылка: {link}')
+        if link and link.startswith('tg://login'):
+            bot.send_message(message.chat.id, f"✅ Успешно!\n`{link}`", parse_mode="Markdown")
+        elif link:
+            bot.send_message(message.chat.id, f"⚠️ Распознано, но это не Telegram логин:\n`{link}`", parse_mode="Markdown")
         else:
-            bot.send_message(message.chat.id, 'QR не распознан.')
+            # Пробуем улучшить контраст и переделкать
+            gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+            _, thresh = cv2.threshold(gray, 100, 255, cv2.THRESH_BINARY)
+            link2, _, _ = detector.detectAndDecode(thresh)
+            if link2 and link2.startswith('tg://login'):
+                bot.send_message(message.chat.id, f"✅ Успешно (после обработки)!\n`{link2}`", parse_mode="Markdown")
+            else:
+                bot.send_message(message.chat.id, "❌ Не удалось распознать Telegram QR-код. Убедись, что фото чёткое и не искажено.")
 
     except Exception as e:
-        bot.send_message(message.chat.id, f'Ошибка: {e}')
+        bot.send_message(message.chat.id, f"🚫 Ошибка: {str(e)}")
 
 @bot.message_handler(commands=['start'])
 def start_cmd(message):
-    bot.send_message(message.chat.id, 'Отправь фото QR-кода.')
+    bot.send_message(message.chat.id, "Отправь мне фото QR-кода для входа в Telegram (tg://login).")
 
-bot.polling()
+if __name__ == '__main__':
+    print("Бот запущен...")
+    bot.polling()
