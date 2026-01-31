@@ -1,7 +1,7 @@
 import telebot
-import cv2
-import os
+from pyzbar.pyzbar import decode
 import numpy as np
+import cv2
 
 TOKEN = '7795610786:AAHhkUL7WcOLYVO18FDyceG3ZTDtWGpphZo'
 bot = telebot.TeleBot(TOKEN)
@@ -13,35 +13,29 @@ def handle_photo(message):
         downloaded = bot.download_file(file_info.file_path)
 
         img_array = np.frombuffer(downloaded, dtype=np.uint8)
-        img = cv2.imdecode(img_array, cv2.IMREAD_COLOR)
+        img = cv2.imdecode(img_array, cv2.IMREAD_GRAYSCALE)
 
         if img is None:
-            bot.send_message(message.chat.id, "❌ Не удалось прочитать изображение.")
+            bot.send_message(message.chat.id, "❌ Не читается.")
             return
 
-        detector = cv2.QRCodeDetector()
-        link, _, _ = detector.detectAndDecode(img)
-
-        if link and link.startswith('tg://login'):
-            bot.send_message(message.chat.id, f"✅ Успешно!\n`{link}`", parse_mode="Markdown")
-        elif link:
-            bot.send_message(message.chat.id, f"⚠️ Распознано, но это не Telegram логин:\n`{link}`", parse_mode="Markdown")
+        decoded = decode(img)
+        if decoded:
+            for qr in decoded:
+                link = qr.data.decode('utf-8')
+                if link.startswith('tg://login'):
+                    bot.send_message(message.chat.id, f"✅ Ссылка:\n`{link}`", parse_mode="Markdown")
+                    return
+            bot.send_message(message.chat.id, f"⚠️ QR найден, но не логин ТГ:\n`{decoded[0].data.decode('utf-8')}`")
         else:
-            # Пробуем улучшить контраст и переделкать
-            gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-            _, thresh = cv2.threshold(gray, 100, 255, cv2.THRESH_BINARY)
-            link2, _, _ = detector.detectAndDecode(thresh)
-            if link2 and link2.startswith('tg://login'):
-                bot.send_message(message.chat.id, f"✅ Успешно (после обработки)!\n`{link2}`", parse_mode="Markdown")
-            else:
-                bot.send_message(message.chat.id, "❌ Не удалось распознать Telegram QR-код. Убедись, что фото чёткое и не искажено.")
+            bot.send_message(message.chat.id, "❌ QR не найден.")
 
     except Exception as e:
-        bot.send_message(message.chat.id, f"🚫 Ошибка: {str(e)}")
+        bot.send_message(message.chat.id, f"🚫 Ошибка: {e}")
 
 @bot.message_handler(commands=['start'])
 def start_cmd(message):
-    bot.send_message(message.chat.id, "Отправь мне фото QR-кода для входа в Telegram (tg://login).")
+    bot.send_message(message.chat.id, "Отправь QR для входа в ТГ.")
 
 if __name__ == '__main__':
     print("Бот запущен...")
